@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import List
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from supabase import Client
 
