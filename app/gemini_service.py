@@ -25,7 +25,7 @@ class GeminiService:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.0-flash",
+        model: str = "gemini-3.5-flash-lite",
         timeout: float = 30.0,
     ) -> None:
         self._api_key = api_key
@@ -85,7 +85,6 @@ class GeminiService:
             + f"STUDENT QUESTION:\n{user_message}"
         )
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={api_key}"
         payload = {
             "contents": [
                 {
@@ -98,16 +97,31 @@ class GeminiService:
             },
         }
 
-        try:
-            with httpx.Client(timeout=self.timeout) as client:
-                res = client.post(url, json=payload)
-                if res.status_code >= 400:
-                    logger.error("Gemini API error %s: %s", res.status_code, res.text)
-                    raise GeminiApiError("Failed to obtain response from AI assistant")
-                data = res.json()
-        except httpx.RequestError as exc:
-            logger.error("Network error reaching Gemini: %s", type(exc).__name__)
-            raise GeminiApiError("Connection to AI assistant timed out") from None
+        candidate_models = [self.model, "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-flash-latest"]
+        # Deduplicate while preserving order
+        seen = set()
+        candidate_models = [m for m in candidate_models if not (m in seen or seen.add(m))]
+
+        last_error = None
+        data = None
+
+        with httpx.Client(timeout=self.timeout) as client:
+            for model_name in candidate_models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                try:
+                    res = client.post(url, json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        break
+                    logger.warning("Gemini model %s returned status %s: %s", model_name, res.status_code, res.text)
+                    last_error = f"Status {res.status_code}"
+                except httpx.RequestError as exc:
+                    logger.warning("Network error reaching %s: %s", model_name, exc)
+                    last_error = str(exc)
+
+        if not data:
+            logger.error("All Gemini candidate models failed: %s", last_error)
+            raise GeminiApiError("Failed to obtain response from AI assistant")
 
         try:
             candidates = data.get("candidates", [])
