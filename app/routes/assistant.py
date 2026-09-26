@@ -44,21 +44,51 @@ def assistant_chat(
 
     # 1. Fetch user profile context
     profile_context = None
+    profile_id = None
     try:
         prof_res = db_client.table("profiles").select("*").eq("user_id", user_id).execute()
         if prof_res.data:
-            profile_context = prof_res.data[0]
+            full_prof = prof_res.data[0]
+            profile_id = full_prof.get("id")
+            # Sanitize to relevant context fields
+            profile_context = {
+                "full_name": full_prof.get("full_name"),
+                "college": full_prof.get("college"),
+                "degree": full_prof.get("degree"),
+                "branch": full_prof.get("branch"),
+                "study_year": full_prof.get("study_year"),
+                "skills": full_prof.get("skills", []),
+                "interests": full_prof.get("interests", []),
+                "preferred_opportunity_types": full_prof.get("preferred_opportunity_types", []),
+                "resume_available": full_prof.get("resume_available", False),
+            }
     except Exception as exc:
         logger.warning("Could not load user profile for assistant chat: %s", type(exc).__name__)
 
     # 2. Fetch canonical opportunity if opportunity_id provided
     opportunity_context = None
+    application_context = None
+    tasks_context = None
+
     if body.opportunity_id:
         opp_id_str = str(body.opportunity_id)
         try:
             opp_res = db_client.table("opportunities").select("*").eq("id", opp_id_str).execute()
             if opp_res.data:
-                opportunity_context = opp_res.data[0]
+                canonical = opp_res.data[0]
+                opportunity_context = {
+                    "id": canonical.get("id"),
+                    "title": canonical.get("title"),
+                    "organization": canonical.get("organization"),
+                    "opportunity_type": canonical.get("opportunity_type"),
+                    "description": canonical.get("description"),
+                    "eligibility": canonical.get("eligibility"),
+                    "required_skills": canonical.get("required_skills"),
+                    "requirements": canonical.get("requirements"),
+                    "location": canonical.get("location"),
+                    "deadline": str(canonical.get("deadline")) if canonical.get("deadline") else None,
+                    "source_url": canonical.get("source_url"),
+                }
             else:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -73,12 +103,63 @@ def assistant_chat(
                 detail="Database error retrieving opportunity context",
             )
 
-    # 3. Call backend Gemini service
+        # 3. Fetch user's tracked application and tasks for this opportunity
+        if profile_id:
+            try:
+                app_res = (
+                    db_client.table("applications")
+                    .select("*")
+                    .eq("profile_id", profile_id)
+                    .eq("opportunity_id", opp_id_str)
+                    .execute()
+                )
+                if app_res.data:
+                    app_row = app_res.data[0]
+                    application_context = {
+                        "application_id": app_row["id"],
+                        "status": app_row.get("status"),
+                    }
+                    # Fetch linked tasks
+                    task_res = (
+                        db_client.table("tasks")
+                        .select("title, priority, status, due_date")
+                        .eq("application_id", app_row["id"])
+                        .execute()
+                    )
+                    if task_res.data:
+                        tasks_context = task_res.data
+            except Exception as exc:
+                logger.debug("Notice fetching application/task context for assistant: %s", exc)
+
+    elif profile_id:
+        # User has not selected a specific opportunity; load active applications summary if any
+        try:
+            apps_res = (
+                db_client.table("applications")
+                .select("id, status, opportunity_id")
+                .eq("profile_id", profile_id)
+                .limit(5)
+                .execute()
+            )
+            if apps_res.data:
+                application_context = {
+                    "tracked_application_count": len(apps_res.data),
+                    "applications": [
+                        {"opportunity_id": a.get("opportunity_id"), "status": a.get("status")}
+                        for a in apps_res.data
+                    ],
+                }
+        except Exception as exc:
+            logger.debug("Notice loading user applications overview: %s", exc)
+
+    # 4. Call backend Gemini service
     try:
         result = gemini_svc.generate_chat_response(
             user_message=body.message,
             profile_context=profile_context,
             opportunity_context=opportunity_context,
+            application_context=application_context,
+            tasks_context=tasks_context,
         )
         return AssistantChatResponse(**result)
     except GeminiConfigError:
