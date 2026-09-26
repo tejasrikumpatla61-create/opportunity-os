@@ -10,17 +10,28 @@ class Settings(BaseSettings):
     APP_NAME: str = "OpportunityOS API"
     APP_ENV: str = "development"
     DEBUG: bool = True
-    ALLOWED_ORIGINS: List[str] = [
+    ALLOWED_ORIGINS: Union[str, List[str]] = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ]
 
-    @field_validator("ALLOWED_ORIGINS", mode="before")
+    # Supabase Configuration
+    SUPABASE_URL: Union[str, None] = None
+    SUPABASE_SERVICE_ROLE_KEY: Union[str, None] = None
+
+    # CrewAI Configuration
+    CREWAI_API_URL: Union[str, None] = None
+    CREWAI_BEARER_TOKEN: Union[str, None] = None
+
+    # Gemini Configuration
+    GEMINI_API_KEY: Union[str, None] = None
+
+    @field_validator("ALLOWED_ORIGINS")
     @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
 

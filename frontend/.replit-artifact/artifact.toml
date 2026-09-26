@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "OpportunityOS"
+description = "A polished student opportunity execution platform that turns internships, scholarships, hackathons, and fellowships into clear personalized next steps."
+version = "1.0.0"
+id = "artifacts/opportunity-os"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23387
+
+[services.development]
+run = "pnpm --filter @workspace/opportunity-os run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/opportunity-os", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/opportunity-os/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23387"
+BASE_PATH = "/"
