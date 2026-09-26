@@ -57,9 +57,13 @@ function toUserProfile(p: RemoteProfile): UserProfile {
     id: p.user_id || p.id || 'current-user',
     name: p.full_name || '',
     email: p.email || '',
+    school: p.college || '',
+    college: p.college || '',
+    major: p.branch || p.degree || '',
     degree: p.degree || '',
     branch: p.branch || '',
     studyYear: p.study_year || 1,
+    graduationYear: p.study_year || 1,
     skills: p.skills || [],
     interests: p.interests || [],
     preferredOpportunityTypes: p.preferred_opportunity_types || [],
@@ -89,9 +93,13 @@ export async function updateProfile(input: Partial<UserProfile>): Promise<UserPr
   const payload: Record<string, unknown> = {};
   if (input.name !== undefined) payload.full_name = input.name;
   if (input.email !== undefined) payload.email = input.email;
+  if (input.college !== undefined) payload.college = input.college;
+  if (input.school !== undefined) payload.college = input.school;
   if (input.degree !== undefined) payload.degree = input.degree;
   if (input.branch !== undefined) payload.branch = input.branch;
+  if (input.major !== undefined) payload.branch = input.major;
   if (input.studyYear !== undefined) payload.study_year = input.studyYear;
+  if (input.graduationYear !== undefined) payload.study_year = input.graduationYear;
   if (input.skills !== undefined) payload.skills = input.skills;
   if (input.interests !== undefined) payload.interests = input.interests;
   if (input.preferredOpportunityTypes !== undefined) payload.preferred_opportunity_types = input.preferredOpportunityTypes;

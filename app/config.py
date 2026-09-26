@@ -28,6 +28,20 @@ class Settings(BaseSettings):
     # Gemini Configuration
     GEMINI_API_KEY: Union[str, None] = None
 
+    # Admin Authorization Configuration
+    ADMIN_EMAILS: Union[str, List[str]] = [
+        "admin@opportunityos.dev",
+        "tejasrikumpatla61@gmail.com",
+    ]
+    ADMIN_KEY: Union[str, None] = None
+
+    @field_validator("ADMIN_EMAILS")
+    @classmethod
+    def assemble_admin_emails(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            return [email.strip().lower() for email in v.split(",") if email.strip()]
+        return [email.strip().lower() for email in v]
+
     @field_validator("ALLOWED_ORIGINS")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:

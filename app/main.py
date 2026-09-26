@@ -11,6 +11,8 @@ from app.routes.profile import router as profile_router
 from app.routes.assistant import router as assistant_router
 from app.routes.feed import router as feed_router
 from app.routes.admin import router as admin_router
+from app.routes.applications import router as applications_router
+from app.routes.tasks import router as tasks_router
 from app.supabase_service import SupabaseConfigError
 
 settings = get_settings()
@@ -47,6 +49,8 @@ app.include_router(profile_router)
 app.include_router(assistant_router)
 app.include_router(feed_router)
 app.include_router(admin_router)
+app.include_router(applications_router)
+app.include_router(tasks_router)
 
 
 @app.get("/")

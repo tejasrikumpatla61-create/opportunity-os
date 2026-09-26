@@ -37,6 +37,7 @@ export type UserProfile = {
   name: string;
   email: string;
   school?: string;
+  college?: string;
   major?: string;
   graduationYear?: number;
   degree?: string;

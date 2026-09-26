@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.auth import get_current_user
+from app.auth import require_admin_user
 from app.refresh_service import refresh_opportunities, RefreshSummary
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 @router.post("/opportunities/refresh", response_model=RefreshSummary)
 async def trigger_opportunities_refresh(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    admin_user: Dict[str, Any] = Depends(require_admin_user),
 ) -> RefreshSummary:
     """
     Trigger automated refresh from verified live opportunity sources.
