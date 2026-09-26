@@ -45,10 +45,11 @@ export async function analyzeOpportunity(opportunityId: string): Promise<Opportu
   const studentProfile = getStudentProfileForAnalysis();
   const profile = getStoredProfile();
   
-  // Use resume text if set in user profile, otherwise fallback to demo student resume
+  // Real resume text is retrieved from server-side storage for the authenticated student.
+  // Never fabricate demo student resume evidence.
   const resumeText = (profile as Record<string, unknown>).resume_text
     || (profile as Record<string, unknown>).resumeText
-    || 'B.Tech CSE student with Python and cybersecurity project experience.';
+    || '';
 
   const requestBody = {
     student_profile: studentProfile,

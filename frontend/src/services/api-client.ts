@@ -19,12 +19,15 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   const token = typeof window !== 'undefined' ? localStorage.getItem('opportunity_os_access_token') : null;
   const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
+  const contentTypeHeader = isFormData ? {} : (init.body ? { 'Content-Type': 'application/json' } : {});
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     credentials: 'include',
     headers: {
       Accept: 'application/json',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...contentTypeHeader,
       ...authHeaders,
       ...init.headers,
     },

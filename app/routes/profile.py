@@ -1,15 +1,29 @@
 import logging
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from supabase import Client
 
 from app.auth import get_current_user
 from app.supabase_service import get_supabase_client
+from app.resume_service import (
+    validate_and_extract_resume,
+    save_resume_and_metadata,
+    get_user_resume_metadata,
+    delete_user_resume,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/profile", tags=["Profile"])
+
+
+class ResumeMetadataResponse(BaseModel):
+    resume_available: bool = False
+    file_name: Optional[str] = None
+    file_size: Optional[int] = None
+    uploaded_at: Optional[str] = None
+    message: Optional[str] = None
 
 
 class ProfileUpdate(BaseModel):
@@ -40,6 +54,8 @@ class ProfileResponse(BaseModel):
     interests: List[str] = Field(default_factory=list)
     preferred_opportunity_types: List[str] = Field(default_factory=list)
     resume_available: bool = False
+    resume_file_name: Optional[str] = None
+    resume_uploaded_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -117,3 +133,68 @@ def update_profile(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update profile",
         )
+
+
+@router.post("/resume", response_model=ResumeMetadataResponse, status_code=status.HTTP_200_OK)
+async def upload_resume(
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    client: Client = Depends(get_supabase_client),
+) -> ResumeMetadataResponse:
+    """
+    Upload and extract a student resume (PDF or DOCX, max 5 MB).
+    Files are stored in private Supabase Storage scoped to the authenticated user.
+    Extracted text and metadata are saved server-side.
+    """
+    user_id = current_user["id"]
+    file_bytes = await file.read()
+
+    safe_filename, extracted_text = validate_and_extract_resume(
+        filename=file.filename,
+        content_type=file.content_type,
+        file_bytes=file_bytes,
+    )
+
+    meta = save_resume_and_metadata(
+        client=client,
+        user_id=user_id,
+        safe_filename=safe_filename,
+        file_bytes=file_bytes,
+        extracted_text=extracted_text,
+    )
+
+    return ResumeMetadataResponse(
+        resume_available=True,
+        file_name=meta.get("file_name"),
+        file_size=meta.get("file_size"),
+        uploaded_at=meta.get("uploaded_at"),
+        message="Resume uploaded and processed successfully.",
+    )
+
+
+@router.get("/resume", response_model=ResumeMetadataResponse)
+def get_resume(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    client: Client = Depends(get_supabase_client),
+) -> ResumeMetadataResponse:
+    """Retrieve metadata for the authenticated user's resume."""
+    user_id = current_user["id"]
+    meta = get_user_resume_metadata(client, user_id)
+    return ResumeMetadataResponse(**meta)
+
+
+@router.delete("/resume", response_model=ResumeMetadataResponse)
+def delete_resume(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    client: Client = Depends(get_supabase_client),
+) -> ResumeMetadataResponse:
+    """Delete the authenticated user's stored resume and clear metadata."""
+    user_id = current_user["id"]
+    delete_user_resume(client, user_id)
+    return ResumeMetadataResponse(
+        resume_available=False,
+        file_name=None,
+        file_size=None,
+        uploaded_at=None,
+        message="Resume deleted successfully.",
+    )

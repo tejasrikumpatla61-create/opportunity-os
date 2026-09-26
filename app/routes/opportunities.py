@@ -19,6 +19,7 @@ from app.crewai_service import (
     CrewAITimeoutError,
     CrewAIMalformedResultError,
 )
+from app.resume_service import get_user_resume_text
 
 logger = logging.getLogger(__name__)
 
@@ -138,11 +139,31 @@ def analyze_opportunity(
     opportunity = response.data[0]
     db_source_url = opportunity.get("source_url")
 
-    # 2. Build CrewAI deterministic inputs
+    # 2. Retrieve real extracted resume text & profile for the authenticated student
+    user_id = current_user.get("id") if isinstance(current_user, dict) else None
+    stored_resume_text = None
+    if user_id:
+        try:
+            stored_resume_text = get_user_resume_text(db_client, user_id)
+        except Exception as exc:
+            logger.debug("Error checking stored resume: %s", exc)
+
+    # Use real extracted resume if available; otherwise use body.resume_text if supplied, else empty
+    effective_resume_text = stored_resume_text if stored_resume_text else (body.resume_text or "")
+
+    effective_profile = body.student_profile
+    if not effective_profile and user_id:
+        try:
+            p_res = db_client.table("profiles").select("*").eq("user_id", user_id).execute()
+            if p_res.data:
+                effective_profile = p_res.data[0]
+        except Exception as exc:
+            logger.debug("Error loading student profile for analysis: %s", exc)
+
     inputs = build_crewai_inputs(
         opportunity=opportunity,
-        student_profile=body.student_profile,
-        resume_text=body.resume_text,
+        student_profile=effective_profile,
+        resume_text=effective_resume_text,
     )
 
     # 3. Call CrewAI service

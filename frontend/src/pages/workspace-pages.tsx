@@ -28,6 +28,12 @@ import {
   saveActionPlanTasks,
   type TaskItem,
 } from '@/services/taskService';
+import {
+  getResumeMetadata,
+  uploadResume,
+  deleteResume,
+  type ResumeMetadata,
+} from '@/services/resumeService';
 import type { Opportunity, OpportunityAnalysis, OpportunityType } from '@/types/domain';
 import { isSafeExternalUrl } from '@/utils/safe-url';
 
@@ -1495,10 +1501,16 @@ export function ProfilePage() {
   const [interests, setInterests] = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState('');
   const [interestInput, setInterestInput] = useState('');
-  const [resume, setResume] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Real Resume State
+  const [resumeMeta, setResumeMeta] = useState<ResumeMetadata | null>(null);
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeDeleting, setResumeDeleting] = useState(false);
+  const [resumeError, setResumeError] = useState('');
+  const [resumeSuccess, setResumeSuccess] = useState('');
 
   // PART A FIX: Hydrate profile on mount from backend
   useEffect(() => {
@@ -1525,8 +1537,62 @@ export function ProfilePage() {
         if (active) setLoading(false);
       });
 
+    // Hydrate real resume metadata
+    getResumeMetadata()
+      .then((meta) => {
+        if (active && meta.resume_available) {
+          setResumeMeta(meta);
+        }
+      })
+      .catch(() => {});
+
     return () => { active = false; };
   }, []);
+
+  const handleResumeFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setResumeError('');
+    setResumeSuccess('');
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'pdf' && ext !== 'docx') {
+      setResumeError('Unsupported file format. Please upload a PDF (.pdf) or Word document (.docx).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setResumeError('Resume file exceeds maximum size limit of 5 MB.');
+      return;
+    }
+
+    setResumeUploading(true);
+    try {
+      const res = await uploadResume(file);
+      setResumeMeta(res);
+      setResumeSuccess(res.message || 'Resume uploaded and processed successfully.');
+    } catch (err: unknown) {
+      setResumeError(err instanceof Error ? err.message : 'Failed to upload resume.');
+    } finally {
+      setResumeUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteResume = async () => {
+    if (!window.confirm('Are you sure you want to delete your stored resume?')) return;
+    setResumeError('');
+    setResumeSuccess('');
+    setResumeDeleting(true);
+    try {
+      await deleteResume();
+      setResumeMeta(null);
+      setResumeSuccess('Resume deleted successfully.');
+    } catch (err: unknown) {
+      setResumeError(err instanceof Error ? err.message : 'Failed to delete resume.');
+    } finally {
+      setResumeDeleting(false);
+    }
+  };
 
   const addTag = (value: string, setter: (value: string[]) => void, current: string[], clear: () => void) => {
     const clean = value.trim();
@@ -1743,26 +1809,84 @@ export function ProfilePage() {
                 <FileText size={17} className="muted" />
               </div>
               <div className="card-body">
-                <div className="readonly-box" style={{ textAlign: 'center' }}>
-                  {resume ? (
+                {resumeSuccess && (
+                  <div className="toast-note" style={{ marginBottom: '.8rem', fontSize: '.75rem' }} role="status">
+                    <CheckCircle2 size={13} /> {resumeSuccess}
+                  </div>
+                )}
+                {resumeError && (
+                  <div className="readonly-box" style={{ marginBottom: '.8rem', color: 'hsl(var(--destructive))', fontSize: '.75rem' }} role="alert">
+                    <AlertCircle size={13} /> {resumeError}
+                  </div>
+                )}
+
+                <div className="readonly-box" style={{ textAlign: 'center', padding: '1.25rem .75rem' }}>
+                  {resumeUploading ? (
+                    <div style={{ display: 'grid', placeItems: 'center', gap: '.4rem' }}>
+                      <div className="loading-pulse" style={{ margin: '0 auto' }} />
+                      <div style={{ fontSize: '.78rem', fontWeight: 700 }}>Extracting & uploading resume…</div>
+                      <p className="muted" style={{ fontSize: '.7rem' }}>Validating content and extracting text for AI fit analysis.</p>
+                    </div>
+                  ) : resumeMeta?.resume_available ? (
                     <>
-                      <Check size={20} style={{ color: 'hsl(var(--primary))' }} />
-                      <div style={{ fontSize: '.78rem', fontWeight: 800, marginTop: '.4rem' }}>{resume}</div>
-                      <button type="button" className="btn btn-ghost" onClick={() => setResume('')} data-testid="button-remove-resume">
-                        <Trash2 size={13} /> Remove
-                      </button>
+                      <FileText size={28} style={{ color: 'hsl(var(--primary))', margin: '0 auto .4rem' }} />
+                      <div style={{ fontSize: '.82rem', fontWeight: 800 }}>{resumeMeta.file_name || 'resume.pdf'}</div>
+                      {resumeMeta.file_size ? (
+                        <div className="mono muted" style={{ fontSize: '.68rem', marginTop: '.2rem' }}>
+                          {(resumeMeta.file_size / 1024).toFixed(1)} KB
+                        </div>
+                      ) : null}
+                      <span className="pill pill-teal" style={{ margin: '.5rem auto', display: 'inline-flex', alignItems: 'center', gap: '.3rem', fontSize: '.68rem' }}>
+                        <Check size={11} /> Verified & Parsed
+                      </span>
+                      {resumeMeta.uploaded_at && (
+                        <p className="muted" style={{ fontSize: '.68rem', marginTop: '.2rem' }}>
+                          Uploaded {new Date(resumeMeta.uploaded_at).toLocaleDateString()}
+                        </p>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'center', marginTop: '1rem', flexWrap: 'wrap' }}>
+                        <label className="btn btn-outline" style={{ cursor: 'pointer', fontSize: '.72rem', padding: '.35rem .7rem' }} htmlFor="resume-replace-file" data-testid="button-replace-resume">
+                          <Upload size={12} /> Replace Resume
+                        </label>
+                        <input
+                          id="resume-replace-file"
+                          type="file"
+                          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          hidden
+                          onChange={handleResumeFileSelected}
+                          data-testid="input-replace-resume"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ fontSize: '.72rem', padding: '.35rem .7rem', color: 'hsl(var(--destructive))' }}
+                          onClick={handleDeleteResume}
+                          disabled={resumeDeleting}
+                          data-testid="button-delete-resume"
+                        >
+                          <Trash2 size={12} /> {resumeDeleting ? 'Deleting…' : 'Delete Resume'}
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <>
-                      <Upload size={20} className="muted" />
-                      <div style={{ fontSize: '.78rem', fontWeight: 800, marginTop: '.4rem' }}>No resume added</div>
-                      <p className="muted" style={{ fontSize: '.7rem', lineHeight: 1.5, margin: '.35rem 0 .8rem' }}>
-                        PDF upload will be available when storage is connected.
+                      <Upload size={24} className="muted" style={{ margin: '0 auto .4rem' }} />
+                      <div style={{ fontSize: '.82rem', fontWeight: 800 }}>No resume uploaded</div>
+                      <p className="muted" style={{ fontSize: '.7rem', lineHeight: 1.5, margin: '.4rem 0 .8rem' }}>
+                        Accepted: <strong>PDF or DOCX</strong> (Maximum 5 MB). Real text will be extracted for AI fit analysis.
                       </p>
-                      <label className="btn btn-outline" style={{ cursor: 'pointer' }} htmlFor="resume-upload" data-testid="label-upload-resume">
-                        <Upload size={13} /> Choose file
+                      <label className="btn btn-primary" style={{ cursor: 'pointer', margin: '0 auto', display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.76rem' }} htmlFor="resume-upload-file" data-testid="label-upload-resume">
+                        <Upload size={13} /> Upload Resume
                       </label>
-                      <input id="resume-upload" type="file" accept=".pdf" hidden onChange={(event) => setResume(event.target.files?.[0]?.name || '')} data-testid="input-resume-upload" />
+                      <input
+                        id="resume-upload-file"
+                        type="file"
+                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        hidden
+                        onChange={handleResumeFileSelected}
+                        data-testid="input-resume-upload"
+                      />
                     </>
                   )}
                 </div>
