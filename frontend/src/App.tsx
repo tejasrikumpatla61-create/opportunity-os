@@ -8,6 +8,7 @@ import { LandingPage } from '@/pages/landing-page';
 import {
   AddOpportunityPage,
   ApplicationsPage,
+  AuthCallbackPage,
   DashboardPage,
   LoginPage,
   OpportunityAnalysisPage,
@@ -86,6 +87,7 @@ function Router() {
         <Route path="/" component={LandingPage} />
         <Route path="/login" component={LoginPage} />
         <Route path="/signup" component={SignupPage} />
+        <Route path="/auth/callback" component={AuthCallbackPage} />
         <Route path="/dashboard"><Authenticated><DashboardPage /></Authenticated></Route>
         <Route path="/opportunities/:id/analysis"><Authenticated><OpportunityAnalysisPage /></Authenticated></Route>
         <Route path="/opportunities/:id"><Authenticated><OpportunityDetailPage /></Authenticated></Route>

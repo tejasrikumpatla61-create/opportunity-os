@@ -1,4 +1,4 @@
-export { LoginPage, SignupPage } from '@/pages/auth-pages';
+export { LoginPage, SignupPage, AuthCallbackPage } from '@/pages/auth-pages';
 export {
   AddOpportunityPage,
   ApplicationsPage,

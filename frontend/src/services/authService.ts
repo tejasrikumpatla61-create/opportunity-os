@@ -1,4 +1,5 @@
 import { apiRequest } from '@/services/api-client';
+import { supabase } from '@/services/supabase';
 
 const TOKEN_KEY = 'opportunity_os_access_token';
 const USER_KEY = 'opportunity_os_user';
@@ -68,7 +69,102 @@ export async function login(email: string, password: string): Promise<AuthUser> 
   return res.user;
 }
 
+export async function loginWithProvider(provider: 'google' | 'github'): Promise<void> {
+  const callbackUrl = `${window.location.origin}/auth/callback`;
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: callbackUrl,
+    },
+  });
+  if (error) {
+    throw error;
+  }
+  if (data?.url) {
+    window.location.assign(data.url);
+  }
+}
+
+export async function loginWithGoogle(): Promise<void> {
+  return loginWithProvider('google');
+}
+
+export async function loginWithGitHub(): Promise<void> {
+  return loginWithProvider('github');
+}
+
+export async function handleOAuthCallback(): Promise<{ user: AuthUser; hasCompletedOnboarding: boolean }> {
+  const searchParams = new URLSearchParams(window.location.search);
+  const searchError = searchParams.get('error_description') || searchParams.get('error');
+  if (searchError) {
+    throw new Error(searchError);
+  }
+
+  let token: string | null = null;
+
+  // Handle hash fragment containing OAuth tokens (implicit flow)
+  if (window.location.hash) {
+    const hash = window.location.hash.replace(/^#/, '');
+    const hashParams = new URLSearchParams(hash);
+    const hashError = hashParams.get('error_description') || hashParams.get('error');
+    if (hashError) {
+      throw new Error(hashError);
+    }
+    const hashAccessToken = hashParams.get('access_token');
+    const hashRefreshToken = hashParams.get('refresh_token');
+    if (hashAccessToken) {
+      token = hashAccessToken;
+      try {
+        await supabase.auth.setSession({
+          access_token: hashAccessToken,
+          refresh_token: hashRefreshToken || '',
+        });
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  // Handle PKCE code flow if present
+  const code = searchParams.get('code');
+  if (!token && code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      throw error;
+    }
+    if (data.session?.access_token) {
+      token = data.session.access_token;
+    }
+  }
+
+  // Fallback to existing Supabase session
+  if (!token) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      token = session.access_token;
+    }
+  }
+
+  if (!token) {
+    throw new Error('No authentication session found in response');
+  }
+
+  localStorage.setItem(TOKEN_KEY, token);
+
+  const sessionData = await restoreSession();
+  if (!sessionData) {
+    throw new Error('Failed to verify session with backend service');
+  }
+
+  return sessionData;
+}
+
 export async function logout(): Promise<void> {
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // ignore
+  }
   try {
     await apiRequest('/api/auth/logout', { method: 'POST' });
   } catch {
@@ -79,7 +175,16 @@ export async function logout(): Promise<void> {
 }
 
 export async function restoreSession(): Promise<{ user: AuthUser; hasCompletedOnboarding: boolean } | null> {
-  const token = getStoredToken();
+  let token = getStoredToken();
+  if (!token && typeof window !== 'undefined' && window.location.hash.includes('access_token=')) {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const hashToken = hashParams.get('access_token');
+    if (hashToken) {
+      token = hashToken;
+      localStorage.setItem(TOKEN_KEY, hashToken);
+    }
+  }
+
   if (!token) return null;
 
   try {

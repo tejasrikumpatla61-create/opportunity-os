@@ -226,12 +226,18 @@ def update_application(
             .eq("profile_id", profile_id)
             .execute()
         )
+        logger.info("PATCH app: app_id=%s, profile_id=%s, update_res_data=%s", app_id_str, profile_id, update_res.data)
         if not update_res.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Application not found.",
-            )
-        updated_app = update_res.data[0]
+            # Fallback check: fetch updated record directly
+            recheck = client.table("applications").select("*").eq("id", app_id_str).eq("profile_id", profile_id).execute()
+            if not recheck.data:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Application not found.",
+                )
+            updated_app = recheck.data[0]
+        else:
+            updated_app = update_res.data[0]
 
         # Fetch opportunity and tasks
         opp_res = client.table("opportunities").select("*").eq("id", updated_app["opportunity_id"]).execute()

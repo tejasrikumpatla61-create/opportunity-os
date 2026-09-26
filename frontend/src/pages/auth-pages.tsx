@@ -1,8 +1,16 @@
 import { ArrowRight, LoaderCircle } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useLocation } from 'wouter';
 import { z } from 'zod';
-import { login, signup, restoreSession } from '@/services/authService';
+import { FaGithub, FaGoogle } from 'react-icons/fa6';
+import {
+  login,
+  signup,
+  loginWithGoogle,
+  loginWithGitHub,
+  handleOAuthCallback,
+  restoreSession,
+} from '@/services/authService';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -26,11 +34,17 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
   const [error, setError] = useState('');
   const isLogin = mode === 'login';
 
+  const clearErrors = () => {
+    if (error) setError('');
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (loading || oauthLoading) return;
     setError('');
 
     // Zod validation
@@ -67,6 +81,25 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
       setLoading(false);
     }
   };
+
+  const handleOAuth = async (provider: 'google' | 'github') => {
+    if (loading || oauthLoading) return;
+    setError('');
+    setOauthLoading(provider);
+    try {
+      if (provider === 'google') {
+        await loginWithGoogle();
+      } else {
+        await loginWithGitHub();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : `Failed to initialize ${provider} login.`;
+      setError(msg);
+      setOauthLoading(null);
+    }
+  };
+
+  const isSubmitting = loading || oauthLoading !== null;
 
   return (
     <div className="auth-layout noise">
@@ -112,9 +145,10 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
                   className="field"
                   id="name"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => { setName(e.target.value); clearErrors(); }}
                   autoComplete="name"
                   required
+                  disabled={isSubmitting}
                   placeholder="How should we call you?"
                   data-testid="input-signup-name"
                 />
@@ -127,9 +161,10 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => { setEmail(e.target.value); clearErrors(); }}
                 autoComplete="email"
                 required
+                disabled={isSubmitting}
                 placeholder="you@school.edu"
                 data-testid={`input-${mode}-email`}
               />
@@ -141,9 +176,10 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => { setPassword(e.target.value); clearErrors(); }}
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
                 required
+                disabled={isSubmitting}
                 placeholder="At least 6 characters"
                 data-testid={`input-${mode}-password`}
               />
@@ -156,9 +192,10 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
                   id="confirm-password"
                   type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => { setConfirmPassword(e.target.value); clearErrors(); }}
                   autoComplete="new-password"
                   required
+                  disabled={isSubmitting}
                   placeholder="Repeat your password"
                   data-testid="input-signup-confirm-password"
                 />
@@ -171,7 +208,13 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
               </div>
             )}
 
-            <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%' }} data-testid={`button-submit-${mode}`}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSubmitting}
+              style={{ width: '100%' }}
+              data-testid={`button-submit-${mode}`}
+            >
               {loading ? (
                 <>
                   <LoaderCircle size={15} className="spin" />
@@ -186,12 +229,78 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
             </button>
           </form>
 
+          {/* ──────── OR ──────── divider */}
+          <div
+            className="auth-divider"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              margin: '1.5rem 0',
+              color: 'hsl(var(--muted-foreground))',
+              fontSize: '.72rem',
+              letterSpacing: '.08em',
+              textTransform: 'uppercase',
+            }}
+          >
+            <div style={{ flex: 1, height: '1px', background: 'hsl(var(--border))' }} />
+            <span style={{ padding: '0 .8rem', fontWeight: 600 }}>OR</span>
+            <div style={{ flex: 1, height: '1px', background: 'hsl(var(--border))' }} />
+          </div>
+
+          {/* Social OAuth Buttons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '.65rem' }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => handleOAuth('google')}
+              disabled={isSubmitting}
+              style={{
+                width: '100%',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '.6rem',
+                fontSize: '.82rem',
+              }}
+              data-testid={`button-oauth-google-${mode}`}
+            >
+              {oauthLoading === 'google' ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : (
+                <FaGoogle size={14} />
+              )}
+              <span>Continue with Google</span>
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => handleOAuth('github')}
+              disabled={isSubmitting}
+              style={{
+                width: '100%',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '.6rem',
+                fontSize: '.82rem',
+              }}
+              data-testid={`button-oauth-github-${mode}`}
+            >
+              {oauthLoading === 'github' ? (
+                <LoaderCircle size={15} className="spin" />
+              ) : (
+                <FaGithub size={15} />
+              )}
+              <span>Continue with GitHub</span>
+            </button>
+          </div>
+
           <div style={{ borderTop: '1px solid hsl(var(--border))', marginTop: '2rem', paddingTop: '1.2rem', textAlign: 'center', fontSize: '.78rem' }}>
             {isLogin ? (
               <>
                 Don&apos;t have an account?{' '}
                 <Link href="/signup" style={{ color: 'hsl(var(--primary))', fontWeight: 800 }} data-testid="link-switch-signup">
-                  Create account
+                  Sign up
                 </Link>
               </>
             ) : (
@@ -214,3 +323,55 @@ function AuthPage({ mode }: { mode: 'login' | 'signup' }) {
 
 export function LoginPage() { return <AuthPage mode="login" />; }
 export function SignupPage() { return <AuthPage mode="signup" />; }
+
+export function AuthCallbackPage() {
+  const [, navigate] = useLocation();
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    handleOAuthCallback()
+      .then((session) => {
+        if (!active) return;
+        if (!session.hasCompletedOnboarding) {
+          navigate('/dashboard?onboarding=1');
+        } else {
+          navigate('/dashboard');
+        }
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        const msg = err instanceof Error ? err.message : 'Social authentication failed';
+        setError(msg);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
+
+  if (error) {
+    return (
+      <div className="app-frame noise" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+        <div style={{ textAlign: 'center', maxWidth: '420px', padding: '2rem' }}>
+          <div className="readonly-box" role="alert" style={{ color: 'hsl(var(--destructive, 0 84% 60%))', marginBottom: '1.2rem', textAlign: 'left' }} data-testid="status-oauth-callback-error">
+            <strong style={{ display: 'block', marginBottom: '.3rem' }}>Authentication Failed</strong>
+            <p style={{ margin: 0, fontSize: '.82rem', lineHeight: 1.5 }}>{error}</p>
+          </div>
+          <button className="btn btn-primary" onClick={() => navigate('/login')} data-testid="button-return-login">
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-frame noise" style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div className="loading-pulse" style={{ margin: '0 auto 1rem' }} />
+        <strong className="mono" style={{ fontSize: '.75rem' }}>Completing social authentication…</strong>
+      </div>
+    </div>
+  );
+}

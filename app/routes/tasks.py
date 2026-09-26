@@ -167,10 +167,10 @@ def create_task(
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Error creating task: %s", type(exc).__name__)
+        logger.error("Error creating task: %s: %s", type(exc).__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create task.",
+            detail=f"Failed to create task: {exc}",
         )
 
 
